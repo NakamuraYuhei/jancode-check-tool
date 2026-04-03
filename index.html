@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EAN / UPC / GTIN 検証 + 国コード推定 + 事業者コードマスタ照合</title>
+<style>
+:root{--bg:#f8fafc;--card:#fff;--line:#e2e8f0;--text:#0f172a;--muted:#475569;--soft:#f1f5f9;--accent:#0f172a;--ok:#047857;--okbg:#ecfdf5;--ng:#be123c;--ngbg:#fff1f2;--gen:#1d4ed8;--genbg:#eff6ff;--err:#b45309;--errbg:#fffbeb;--radius:20px;--shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.04)}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text)}
+.wrap{max-width:1440px;margin:0 auto;padding:24px}.badge{display:inline-block;background:var(--accent);color:#fff;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700}
+h1{margin:14px 0 8px;font-size:clamp(28px,4vw,40px);line-height:1.15}.lead{margin:0 0 24px;color:var(--muted);font-size:14px;line-height:1.7}
+.layout{display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:start}.stack{display:grid;gap:24px}.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px}
+.section-title{margin:0 0 14px;font-size:20px}.label{display:block;font-size:14px;font-weight:700;margin-bottom:10px}.segmented,.actions{display:flex;flex-wrap:wrap;gap:10px}
+button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:14px;padding:12px 16px;font-size:14px;font-weight:700;cursor:pointer}button:hover{background:#f8fafc}.segmented button.active,.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+input[type="text"],input[type="number"],select{width:100%;border:1px solid #cbd5e1;border-radius:14px;padding:12px 14px;font-size:15px;outline:none;background:#fff}
+input[type="file"]{width:100%;border:1px dashed #cbd5e1;border-radius:14px;padding:12px;background:#fff}
+.code-input{font-size:20px!important;border-radius:18px!important;padding:14px 16px!important}
+.hint,.muted{color:var(--muted);font-size:12px;line-height:1.7;margin-top:8px}.result-head{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.result-title{margin:8px 0 0;font-size:30px;line-height:1.2}
+.status{padding:6px 12px;border-radius:999px;font-size:13px;font-weight:800}.status.valid{background:var(--okbg);color:var(--ok)}.status.invalid{background:var(--ngbg);color:var(--ng)}.status.generated{background:var(--genbg);color:var(--gen)}.status.error{background:var(--errbg);color:var(--err)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}.kv,.mini-stat{background:var(--soft);border-radius:18px;padding:16px}.kv .k,.mini-stat .k{color:#64748b;font-size:12px;margin-bottom:6px}.kv .v{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:22px;word-break:break-all}.mini-stat .v{font-size:28px;font-weight:800}.full{grid-column:1/-1}
+.table-wrap{overflow:auto;border-radius:16px;border:1px solid #e2e8f0;max-height:460px;margin-top:16px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0;vertical-align:top}th{color:#64748b;font-weight:700;background:#fff;position:sticky;top:0}
+.log,.history-item{background:var(--soft);border-radius:18px;padding:14px;font-size:14px;color:#334155}.log+.log,.history-item+.history-item{margin-top:10px}.log strong{color:#94a3b8;margin-right:8px}.history-top{display:flex;gap:10px;align-items:center;justify-content:space-between}.chip{background:#fff;border:1px solid #e2e8f0;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700;color:#475569}
+.row-valid{background:#f0fdf4}.row-invalid{background:#fff1f2}.row-generated{background:#eff6ff}.row-error{background:#fffbeb}.ok-text{color:var(--ok)}.ng-text{color:var(--ng)}.gen-text{color:var(--gen)}.err-text{color:var(--err)}.hidden{display:none!important}
+.upload-grid{display:grid;grid-template-columns:1.2fr .8fr .5fr;gap:12px;align-items:end}.summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:16px}.tagline{display:inline-flex;gap:8px;flex-wrap:wrap;margin-top:6px}.pill{font-size:12px;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:4px 8px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1100px){.layout,.two-col,.upload-grid{grid-template-columns:1fr}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.wrap{padding:16px}.card{padding:18px}.grid2,.summary-grid{grid-template-columns:1fr}.result-title{font-size:24px}.code-input{font-size:18px!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="badge">Country + Company Master Match</span>
+  <h1>EAN / UPC / GTIN 検証エージェント</h1>
+  <p class="lead">チェックデジット検証に加えて、GS1プレフィックスによる国/地域推定と、事業者コードマスタCSV照合に対応した完成版です。</p>
+  <div class="tagline">
+    <span class="pill">EAN-13 / JAN-13</span><span class="pill">EAN-8 / JAN-8</span><span class="pill">UPC-A</span><span class="pill">GTIN-14</span><span class="pill">国コード推定</span><span class="pill">事業者コードマスタ照合</span>
+  </div>
+
+  <div class="layout">
+    <div class="stack">
+      <section class="card">
+        <h3 class="section-title">単票判定</h3>
+        <label class="label">判定対象</label>
+        <div class="segmented" id="modeButtons">
+          <button type="button" data-mode="auto" class="active">自動判定</button>
+          <button type="button" data-mode="ean13">EAN/JAN-13</button>
+          <button type="button" data-mode="ean8">EAN/JAN-8</button>
+          <button type="button" data-mode="upca">UPC-A</button>
+          <button type="button" data-mode="gtin14">GTIN-14</button>
+        </div>
+        <div style="height:18px"></div>
+        <label class="label" for="codeInput">コード入力</label>
+        <input id="codeInput" class="code-input" type="text" placeholder="例: 4901234567894 / 036000291452 / 12345678901231" />
+        <div class="hint">国/地域推定は主にGTIN-13/14の先頭3桁プレフィックスを対象にしています。UPC-Aは先頭桁から北米系として表示します。</div>
+        <div style="height:18px"></div>
+        <div class="actions">
+          <button type="button" class="primary" id="runBtn">エージェント実行</button>
+          <button type="button" class="secondary" id="resetBtn">リセット</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="result-head">
+          <div><div class="muted" style="margin-top:0;font-size:14px">判定結果</div><h2 class="result-title" id="resultTitle">まだ実行されていません</h2></div>
+          <div id="resultStatus" class="status hidden"></div>
+        </div>
+        <p id="resultMessage" class="lead" style="margin-top:14px;margin-bottom:0">入力後に「エージェント実行」を押すと、ここに判定内容が表示されます。</p>
+        <div id="resultGrid" class="grid2 hidden"></div>
+      </section>
+
+      <section class="card">
+        <h3 class="section-title">計算ステップ</h3>
+        <div id="stepsEmpty" class="muted" style="margin-top:0">判定後に計算の詳細がここに表示されます。</div>
+        <div id="stepsWrap" class="table-wrap hidden"><table><thead><tr><th>位置</th><th>数字</th><th>右からの位置</th><th>重み</th><th>積</th></tr></thead><tbody id="stepsBody"></tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h3 class="section-title">CSVアップロード</h3>
+        <div class="upload-grid">
+          <div><label class="label" for="csvFile">商品コードCSV</label><input id="csvFile" type="file" accept=".csv,text/csv" /><div class="hint">商品コード一覧。1行目をヘッダーとして扱います。</div></div>
+          <div><label class="label" for="csvColumnSelect">判定対象列</label><select id="csvColumnSelect"><option value="">CSV読込後に選択</option></select><div class="hint">jan / ean / upc / gtin / code 系の列名を自動検出します。</div></div>
+          <div><label class="label" for="csvLimit">最大表示件数</label><input id="csvLimit" type="number" min="10" max="5000" step="10" value="500" /><div class="hint">全件処理、表示のみ制限。</div></div>
+        </div>
+        <div style="height:16px"></div>
+        <div class="two-col">
+          <div>
+            <label class="label" for="masterFile">事業者コードマスタCSV</label>
+            <input id="masterFile" type="file" accept=".csv,text/csv" />
+            <div class="hint">例: company_prefix, company_name, country などの列を含むCSV。</div>
+          </div>
+          <div>
+            <label class="label" for="masterPrefixSelect">マスタのコード列</label>
+            <select id="masterPrefixSelect"><option value="">マスタ読込後に選択</option></select>
+            <div class="hint">company_prefix / prefix / business_code などを自動検出します。</div>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <div class="two-col">
+          <div>
+            <label class="label" for="masterNameSelect">マスタの会社名列</label>
+            <select id="masterNameSelect"><option value="">任意</option></select>
+          </div>
+          <div>
+            <label class="label" for="masterCountrySelect">マスタの国列</label>
+            <select id="masterCountrySelect"><option value="">任意</option></select>
+          </div>
+        </div>
+        <div style="height:16px"></div>
+        <div class="actions">
+          <button type="button" class="primary" id="runCsvBtn">CSV一括判定を実行</button>
+          <button type="button" class="secondary" id="downloadCsvBtn">結果CSVを保存</button>
+          <button type="button" class="secondary" id="clearCsvBtn">CSV状態をクリア</button>
+        </div>
+        <div id="csvInfo" class="hint">まだCSVは読み込まれていません。</div>
+        <div id="masterInfo" class="hint">まだ事業者コードマスタは読み込まれていません。</div>
+        <div id="csvSummary" class="summary-grid hidden"></div>
+        <div id="csvTableWrap" class="table-wrap hidden">
+          <table>
+            <thead><tr><th>行</th><th>元データ</th><th>正規化後</th><th>結果</th><th>種別</th><th>国推定</th><th>マスタ照合</th><th>会社名</th><th>完成コード</th><th>メッセージ</th></tr></thead>
+            <tbody id="csvTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="card"><h3 class="section-title">エージェントログ</h3><div id="logs"><div class="log"><strong>#1</strong>まだ処理は実行されていません。</div><div class="log"><strong>#2</strong>コードを入力し、エージェント実行を押してください。</div></div></section>
+      <section class="card"><h3 class="section-title">最近の判定履歴</h3><div id="history"><p class="muted" style="margin:0">まだ履歴はありません。</p></div></section>
+      <section class="card"><h3 class="section-title">マスタ照合の考え方</h3><div class="muted" style="margin-top:0"><div>・ 商品コードから候補となる事業者コードを前方一致で探索します。</div><div>・ 最長一致したプレフィックスを採用します。</div><div>・ GTINは会社コード長が固定ではないため、完全判定には正しいマスタ設計が必要です。</div><div>・ このツールは「前方一致突合」による運用向け照合です。</div></div></section>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+const state={mode:"auto",history:[],csvHeaders:[],csvRows:[],csvSelectedColumn:"",csvResults:[],csvOutputRows:[],masterHeaders:[],masterRows:[],masterPrefixCol:"",masterNameCol:"",masterCountryCol:""};
+const $=id=>document.getElementById(id);
+const MODE_DEFS={ean13:{label:"EAN/JAN-13",baseLength:12,fullLength:13},ean8:{label:"EAN/JAN-8",baseLength:7,fullLength:8},upca:{label:"UPC-A",baseLength:11,fullLength:12},gtin14:{label:"GTIN-14",baseLength:13,fullLength:14}};
+const PREFIX_RANGES=[
+  [0,19,"US/CA"],[30,39,"US"],[45,49,"Japan"],[50,59,"UK"],[60,139,"US/CA"],[300,379,"France"],[380,380,"Bulgaria"],[383,383,"Slovenia"],[385,385,"Croatia"],[387,387,"Bosnia and Herzegovina"],[400,440,"Germany"],[450,459,"Japan"],[460,469,"Russia"],[470,470,"Kyrgyzstan"],[471,471,"Taiwan"],[474,474,"Estonia"],[475,475,"Latvia"],[476,476,"Azerbaijan"],[477,477,"Lithuania"],[478,478,"Uzbekistan"],[479,479,"Sri Lanka"],[480,480,"Philippines"],[481,481,"Belarus"],[482,482,"Ukraine"],[484,484,"Moldova"],[485,485,"Armenia"],[486,486,"Georgia"],[487,487,"Kazakhstan"],[489,489,"Hong Kong"],[490,499,"Japan"],[500,509,"UK"],[520,521,"Greece"],[528,528,"Lebanon"],[529,529,"Cyprus"],[530,530,"Albania"],[531,531,"North Macedonia"],[535,535,"Malta"],[539,539,"Ireland"],[540,549,"Belgium/Luxembourg"],[560,560,"Portugal"],[569,569,"Iceland"],[570,579,"Denmark"],[590,590,"Poland"],[594,594,"Romania"],[599,599,"Hungary"],[600,601,"South Africa"],[603,603,"Ghana"],[608,608,"Bahrain"],[609,609,"Mauritius"],[611,611,"Morocco"],[613,613,"Algeria"],[616,616,"Kenya"],[618,618,"Ivory Coast"],[619,619,"Tunisia"],[621,621,"Syria"],[622,622,"Egypt"],[624,624,"Libya"],[625,625,"Jordan"],[626,626,"Iran"],[627,627,"Kuwait"],[628,628,"Saudi Arabia"],[629,629,"UAE"],[640,649,"Finland"],[690,699,"China"],[700,709,"Norway"],[729,729,"Israel"],[730,739,"Sweden"],[740,740,"Guatemala"],[741,741,"El Salvador"],[742,742,"Honduras"],[743,743,"Nicaragua"],[744,744,"Costa Rica"],[745,745,"Panama"],[746,746,"Dominican Republic"],[750,750,"Mexico"],[754,755,"Canada"],[759,759,"Venezuela"],[760,769,"Switzerland/Liechtenstein"],[770,771,"Colombia"],[773,773,"Uruguay"],[775,775,"Peru"],[777,777,"Bolivia"],[779,779,"Argentina"],[780,780,"Chile"],[784,784,"Paraguay"],[786,786,"Ecuador"],[789,790,"Brazil"],[800,839,"Italy"],[840,849,"Spain"],[850,850,"Cuba"],[858,858,"Slovakia"],[859,859,"Czech Republic"],[860,860,"Serbia"],[865,865,"Mongolia"],[867,867,"North Korea"],[868,869,"Turkey"],[870,879,"Netherlands"],[880,880,"South Korea"],[884,884,"Cambodia"],[885,885,"Thailand"],[888,888,"Singapore"],[890,890,"India"],[893,893,"Vietnam"],[896,896,"Pakistan"],[899,899,"Indonesia"],[900,919,"Austria"],[930,939,"Australia"],[940,949,"New Zealand"],[955,955,"Malaysia"],[958,958,"Macau"]
+];
+
+const normalize=v=>String(v||"").replace(/\D/g,"");
+const inferMode=(d,m)=>{if(m!=="auto")return m;const l=d.length;if(l===7||l===8)return"ean8";if(l===11||l===12)return"upca";if(l===14)return"gtin14";if(l===13)return"ean13";return null};
+function calcCheckDigit(base){const digits=base.split("").map(Number);let sum=0;const steps=[];for(let i=0;i<digits.length;i++){const fromRight=digits.length-i;const weight=(fromRight%2===1)?3:1;const product=digits[i]*weight;sum+=product;steps.push({position:i+1,digit:digits[i],fromRight,weight,product})}return{checkDigit:(10-(sum%10))%10,sum,steps}}
+function estimateCountry(type,fullCode){
+  if(!fullCode)return{prefix:"",country:""};
+  if(type==="UPC-A") return {prefix:fullCode.slice(0,1),country:"US/CA (UPC-A)"};
+  if(type==="EAN/JAN-8") return {prefix:fullCode.slice(0,3),country:"EAN-8 は国推定が限定的"};
+  const p = parseInt(fullCode.slice(0,3),10);
+  for(const [s,e,name] of PREFIX_RANGES){ if(p>=s && p<=e) return {prefix:String(p).padStart(3,"0"),country:name}; }
+  return {prefix:fullCode.slice(0,3),country:"未判定"};
+}
+function judge(input,selectedMode){
+  const digits=normalize(input);
+  if(!digits){return{status:"error",title:"コードが未入力です",message:"コードを入力してから判定してください。",normalized:"",logs:["入力値を受け取りました。","数字以外を除去しました。","判定対象の数字が存在しないため処理を停止しました。"]}}
+  const mode=inferMode(digits,selectedMode);
+  if(!mode||!MODE_DEFS[mode]){return{status:"error",title:"桁数エラー",message:"EAN-8(7/8桁), EAN/JAN-13(12/13桁), UPC-A(11/12桁), GTIN-14(13/14桁) のいずれかで入力してください。",normalized:digits,logs:["入力値: "+digits,"コード種別の自動判定を実施しました。","対応していない桁数のため判定を中止しました。"]}}
+  const def=MODE_DEFS[mode]; const logs=["入力値を正規化: "+digits,"判定モード: "+def.label];
+  if(digits.length===def.baseLength){
+    const calculation=calcCheckDigit(digits); const fullCode=digits+String(calculation.checkDigit); const countryInfo=estimateCountry(def.label,fullCode);
+    logs.push(def.baseLength+"桁入力のためチェックデジット計算モードで実行しました。","加重合計: "+calculation.sum,"算出されたチェックデジット: "+calculation.checkDigit,"完成コード: "+fullCode,"国/地域推定: "+countryInfo.country);
+    return{status:"generated",title:"チェックデジットを生成しました",message:def.label+" のチェックデジットは "+calculation.checkDigit+" です。",type:def.label,normalized:digits,expected:String(calculation.checkDigit),full:fullCode,sum:calculation.sum,steps:calculation.steps,countryPrefix:countryInfo.prefix,country:countryInfo.country,logs}
+  }
+  if(digits.length===def.fullLength){
+    const base=digits.slice(0,-1), actual=digits.slice(-1); const calculation=calcCheckDigit(base); const expected=String(calculation.checkDigit); const valid=actual===expected; const countryInfo=estimateCountry(def.label,digits);
+    logs.push(def.fullLength+"桁入力のため正誤判定モードで実行しました。","ベースコード: "+base,"加重合計: "+calculation.sum,"期待されるチェックデジット: "+expected,"入力されたチェックデジット: "+actual,"国/地域推定: "+countryInfo.country, valid?"結果: 一致しました。":"結果: 不一致でした。");
+    return{status:valid?"valid":"invalid",title:valid?"正しいコードです":"誤ったコードです",message:valid?"入力されたコードはチェックデジット検証を通過しました。":"期待値は "+expected+" ですが、入力値は "+actual+" です。",type:def.label,normalized:digits,actual,expected,full:digits,sum:calculation.sum,steps:calculation.steps,countryPrefix:countryInfo.prefix,country:countryInfo.country,logs}
+  }
+  return{status:"error",title:"入力形式エラー",message:def.label+" では "+def.baseLength+"桁（計算）または "+def.fullLength+"桁（判定）で入力してください。",normalized:digits,logs:["入力値: "+digits,"判定モード: "+def.label,"許可される桁数に一致しませんでした。"]}
+}
+const escapeHtml=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+const currentTime=()=>new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+
+function renderStatus(status){const el=$("resultStatus");if(!status){el.className="status hidden";el.textContent="";return}el.className="status "+status;el.textContent=status==="valid"?"OK":status==="invalid"?"NG":status==="generated"?"生成":"エラー"}
+function renderGrid(result){
+  const grid=$("resultGrid");
+  if(!result||!result.full){grid.className="grid2 hidden";grid.innerHTML="";return}
+  const items=[{key:"コード種別",value:result.type||""},{key:"加重合計",value:String(result.sum||"")},{key:"国/地域推定",value:result.country||""},{key:"プレフィックス",value:result.countryPrefix||""},{key:"対象コード",value:result.full,full:true},{key:"期待されるチェックデジット",value:result.expected||""}];
+  if(result.actual)items.push({key:"入力されたチェックデジット",value:result.actual});
+  if(result.masterMatchStatus)items.push({key:"マスタ照合",value:result.masterMatchStatus});
+  grid.innerHTML=items.map(item=>'<div class="kv'+(item.full?' full':'')+'"><div class="k">'+escapeHtml(item.key)+'</div><div class="v">'+escapeHtml(item.value)+'</div></div>').join("");
+  grid.className="grid2";
+}
+function renderSteps(steps){const wrap=$("stepsWrap"),empty=$("stepsEmpty"),body=$("stepsBody");if(!steps||!steps.length){wrap.className="table-wrap hidden";empty.style.display="block";body.innerHTML="";return}body.innerHTML=steps.map(s=>"<tr><td>"+s.position+"</td><td>"+s.digit+"</td><td>"+s.fromRight+"</td><td>"+s.weight+"</td><td>"+s.product+"</td></tr>").join("");empty.style.display="none";wrap.className="table-wrap"}
+function renderLogs(logs){const items=logs&&logs.length?logs:["まだ処理は実行されていません。","コードを入力し、エージェント実行を押してください。"];$("logs").innerHTML=items.map((log,i)=>'<div class="log"><strong>#'+(i+1)+'</strong>'+escapeHtml(log)+'</div>').join("")}
+function renderHistory(){const el=$("history");if(!state.history.length){el.innerHTML='<p class="muted" style="margin:0">まだ履歴はありません。</p>';return}el.innerHTML=state.history.map(item=>'<div class="history-item"><div class="history-top"><div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;word-break:break-all">'+escapeHtml(item.input)+'</div><span class="chip">'+escapeHtml(item.outcome)+'</span></div><div class="muted" style="margin-bottom:0">'+escapeHtml(item.time+" / "+item.summary)+'</div></div>').join("")}
+function runSingle(){
+  const result=judge($("codeInput").value,state.mode);
+  if(state.masterRows.length && result.full){const match=findMasterMatch(result.full);if(match){result.masterMatchStatus="一致";result.masterCompany=match.name;result.masterPrefix=match.prefix}}
+  $("resultTitle").textContent=result.title;$("resultMessage").textContent=result.message;renderStatus(result.status);renderGrid(result);renderSteps(result.steps||[]);renderLogs(result.logs||[]);
+  const digits=normalize($("codeInput").value);
+  if(digits){const outcome=result.status==="valid"?"OK":result.status==="invalid"?"NG":result.status==="generated"?"生成":"エラー";const summary=result.status==="generated"?("CD="+(result.expected||"")):result.status==="valid"?"一致":result.status==="invalid"?("期待値 "+(result.expected||"")):"入力エラー";state.history.unshift({time:currentTime(),input:digits,outcome,summary});state.history=state.history.slice(0,8);renderHistory()}
+}
+function resetSingle(){$("codeInput").value="";$("resultTitle").textContent="まだ実行されていません";$("resultMessage").textContent="入力後に「エージェント実行」を押すと、ここに判定内容が表示されます。";renderStatus(null);renderGrid(null);renderSteps([]);renderLogs([])}
+
+function parseCSV(text){
+  const rows=[]; let row=[], field="", i=0, inQuotes=false;
+  while(i<text.length){
+    const char=text[i], next=text[i+1];
+    if(char==='"'){ if(inQuotes && next==='"'){ field+='"'; i+=2; continue; } inQuotes=!inQuotes; i+=1; continue; }
+    if(char==="," && !inQuotes){ row.push(field); field=""; i+=1; continue; }
+    if((char==="\n"||char==="\r") && !inQuotes){ if(char==="\r"&&next==="\n") i+=1; row.push(field); rows.push(row); row=[]; field=""; i+=1; continue; }
+    field+=char; i+=1;
+  }
+  row.push(field); rows.push(row);
+  return rows.filter(r=>r.some(cell=>String(cell).trim()!=="")).map(r=>r.map(cell=>String(cell).trim()));
+}
+const normalizeHeader=v=>String(v||"").toLowerCase().replace(/\s+/g,"").replace(/[^a-z0-9_]/g,"");
+function detectColumn(headers, preferred){
+  const normalized=headers.map(normalizeHeader);
+  for(const name of preferred){const idx=normalized.indexOf(name); if(idx>=0) return headers[idx]}
+  for(let i=0;i<normalized.length;i++){ const name=normalized[i]; for(const p of preferred){ if(name.includes(p.replace(/_/g,""))) return headers[i] } }
+  return headers[0]||"";
+}
+function populateSelect(id, headers, selected, allowEmpty){
+  const sel=$(id); sel.innerHTML="";
+  if(allowEmpty){ const o=document.createElement("option"); o.value=""; o.textContent="任意"; sel.appendChild(o); }
+  if(!headers.length){ if(!allowEmpty){ sel.innerHTML='<option value="">読込後に選択</option>'; } return; }
+  headers.forEach(header=>{const option=document.createElement("option"); option.value=header; option.textContent=header; if(header===selected) option.selected=true; sel.appendChild(option)});
+}
+function readCSVFile(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=e=>resolve(String(e.target.result||""));reader.onerror=reject;reader.readAsText(file,"utf-8")})}
+
+function handleProductCSV(rows){
+  if(!rows.length){ clearProductCSV(); $("csvInfo").textContent="CSVに有効なデータが見つかりませんでした。"; return; }
+  const headers=rows[0]; const dataRows=rows.slice(1).map(r=>{const obj={}; headers.forEach((h,idx)=>obj[h]=r[idx]!=null?r[idx]:""); return obj});
+  state.csvHeaders=headers; state.csvRows=dataRows; state.csvSelectedColumn=detectColumn(headers,["jan","jancode","jan_code","ean","ean13","ean8","upc","upca","gtin","gtin14","barcode","code","productcode","itemcode"]);
+  populateSelect("csvColumnSelect",headers,state.csvSelectedColumn,false);
+  $("csvInfo").textContent="商品コードCSVを読み込みました。ヘッダー "+headers.length+" 列 / データ "+dataRows.length+" 行。判定対象列: "+state.csvSelectedColumn;
+}
+function handleMasterCSV(rows){
+  if(!rows.length){ clearMasterCSV(); $("masterInfo").textContent="マスタCSVに有効なデータが見つかりませんでした。"; return; }
+  const headers=rows[0]; const dataRows=rows.slice(1).map(r=>{const obj={}; headers.forEach((h,idx)=>obj[h]=r[idx]!=null?r[idx]:""); return obj});
+  state.masterHeaders=headers; state.masterRows=dataRows;
+  state.masterPrefixCol=detectColumn(headers,["company_prefix","prefix","business_code","companycode","vendorcode","code","gs1prefix"]);
+  state.masterNameCol=detectColumn(headers,["company_name","name","vendor_name","supplier","company"]);
+  state.masterCountryCol=detectColumn(headers,["country","country_name","nation","region"]);
+  populateSelect("masterPrefixSelect",headers,state.masterPrefixCol,false);
+  populateSelect("masterNameSelect",headers,state.masterNameCol,true);
+  populateSelect("masterCountrySelect",headers,state.masterCountryCol,true);
+  $("masterInfo").textContent="事業者コードマスタを読み込みました。ヘッダー "+headers.length+" 列 / データ "+dataRows.length+" 行。照合列: "+state.masterPrefixCol;
+}
+function findMasterMatch(fullCode){
+  if(!state.masterRows.length || !state.masterPrefixCol) return null;
+  let best=null;
+  for(const row of state.masterRows){
+    const prefix=normalize(row[state.masterPrefixCol]);
+    if(!prefix) continue;
+    if(fullCode.startsWith(prefix)){
+      if(!best || prefix.length > best.prefix.length){
+        best={prefix,name:state.masterNameCol?String(row[state.masterNameCol]||""):"",country:state.masterCountryCol?String(row[state.masterCountryCol]||""):"",row};
+      }
+    }
+  }
+  return best;
+}
+function renderCSVSummary(summary){
+  $("csvSummary").innerHTML=[{key:"総件数",value:summary.total,cls:""},{key:"OK",value:summary.valid,cls:"ok-text"},{key:"NG",value:summary.invalid,cls:"ng-text"},{key:"生成",value:summary.generated,cls:"gen-text"},{key:"エラー",value:summary.error,cls:"err-text"}].map(item=>'<div class="mini-stat"><div class="k">'+escapeHtml(item.key)+'</div><div class="v '+item.cls+'">'+escapeHtml(item.value)+'</div></div>').join("");
+  $("csvSummary").className="summary-grid";
+}
+function runCSV(){
+  if(!state.csvRows.length){ $("csvInfo").textContent="先に商品コードCSVを読み込んでください。"; return; }
+  const column=$("csvColumnSelect").value||state.csvSelectedColumn; if(!column){ $("csvInfo").textContent="判定対象列を選択してください。"; return; }
+  state.csvSelectedColumn=column; state.masterPrefixCol=$("masterPrefixSelect").value||state.masterPrefixCol; state.masterNameCol=$("masterNameSelect").value||""; state.masterCountryCol=$("masterCountrySelect").value||"";
+  const limit=Math.max(10,Math.min(5000,parseInt($("csvLimit").value||"500",10)));
+  const summary={total:0,valid:0,invalid:0,generated:0,error:0}; const results=[], outputRows=[];
+  state.csvRows.forEach((row,index)=>{
+    const raw=row[column]!=null?String(row[column]):""; const res=judge(raw,state.mode); const master=findMasterMatch(res.full||res.normalized||"");
+    summary.total+=1; summary[res.status]+=1;
+    const matchStatus = master ? "一致" : (state.masterRows.length ? "未一致" : "マスタ未読込");
+    const companyName = master ? master.name : "";
+    const masterCountry = master ? master.country : "";
+    const record={rowNo:index+2,raw,normalized:res.normalized||"",status:res.status,type:res.type||"",country:res.country||"",matchStatus,companyName,masterCountry,expected:res.expected||"",actual:res.actual||"",full:res.full||"",message:res.message||""};
+    results.push(record);
+    outputRows.push(Object.assign({},row,{
+      _code_target_column:column,
+      _code_raw_value:raw,
+      _code_normalized:record.normalized,
+      _code_status:record.status,
+      _code_type:record.type,
+      _code_country_prefix:res.countryPrefix||"",
+      _code_country_estimate:record.country,
+      _code_master_match:matchStatus,
+      _code_master_company:companyName,
+      _code_master_country:masterCountry,
+      _code_expected_cd:record.expected,
+      _code_actual_cd:record.actual,
+      _code_full_code:record.full,
+      _code_message:record.message
+    }));
+  });
+  state.csvResults=results; state.csvOutputRows=outputRows; renderCSVSummary(summary);
+  const view=results.slice(0,limit);
+  $("csvTableBody").innerHTML=view.map(r=>'<tr class="row-'+escapeHtml(r.status)+'"><td>'+escapeHtml(r.rowNo)+'</td><td>'+escapeHtml(r.raw)+'</td><td>'+escapeHtml(r.normalized)+'</td><td>'+escapeHtml(r.status)+'</td><td>'+escapeHtml(r.type)+'</td><td>'+escapeHtml(r.country)+'</td><td>'+escapeHtml(r.matchStatus)+'</td><td>'+escapeHtml(r.companyName)+'</td><td>'+escapeHtml(r.full)+'</td><td>'+escapeHtml(r.message)+'</td></tr>').join("");
+  $("csvTableWrap").className="table-wrap";
+  $("csvInfo").textContent="一括判定が完了しました。対象列: "+column+" / "+results.length+" 行を処理 / 画面表示は先頭 "+view.length+" 件です。";
+}
+function toCSV(rows){
+  if(!rows.length) return "";
+  const headers=Object.keys(rows[0]);
+  const escapeCell=value=>{const s=String(value==null?"":value); return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+  const lines=[headers.map(escapeCell).join(",")]; rows.forEach(row=>lines.push(headers.map(h=>escapeCell(row[h])).join(","))); return lines.join("\r\n");
+}
+function downloadCSV(){
+  if(!state.csvOutputRows.length){ $("csvInfo").textContent="先にCSV一括判定を実行してください。"; return; }
+  const blob=new Blob([toCSV(state.csvOutputRows)],{type:"text/csv;charset=utf-8;"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  a.href=url; a.download="barcode_country_master_result_"+new Date().toISOString().replace(/[:T]/g,"-").slice(0,19)+".csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+function clearProductCSV(){state.csvHeaders=[];state.csvRows=[];state.csvSelectedColumn="";state.csvResults=[];state.csvOutputRows=[];$("csvFile").value="";$("csvTableBody").innerHTML="";$("csvTableWrap").className="table-wrap hidden";$("csvSummary").className="summary-grid hidden";$("csvSummary").innerHTML="";populateSelect("csvColumnSelect",[],"",false)}
+function clearMasterCSV(){state.masterHeaders=[];state.masterRows=[];state.masterPrefixCol="";state.masterNameCol="";state.masterCountryCol="";$("masterFile").value="";populateSelect("masterPrefixSelect",[],"",false);populateSelect("masterNameSelect",[],"",true);populateSelect("masterCountrySelect",[],"",true)}
+function clearAllCSV(){clearProductCSV();clearMasterCSV()}
+$("modeButtons").addEventListener("click",e=>{const button=e.target.closest("button[data-mode]"); if(!button)return; state.mode=button.getAttribute("data-mode"); Array.from($("modeButtons").querySelectorAll("button")).forEach(btn=>btn.classList.toggle("active",btn===button))});
+$("runBtn").addEventListener("click",runSingle); $("resetBtn").addEventListener("click",resetSingle); $("codeInput").addEventListener("keydown",e=>{if(e.key==="Enter")runSingle()});
+$("csvFile").addEventListener("change",async e=>{const file=e.target.files&&e.target.files[0]; if(!file)return; try{handleProductCSV(parseCSV(await readCSVFile(file)))}catch(err){clearProductCSV(); $("csvInfo").textContent="商品コードCSVの読み込みに失敗しました。UTF-8形式か確認してください。"}});
+$("masterFile").addEventListener("change",async e=>{const file=e.target.files&&e.target.files[0]; if(!file)return; try{handleMasterCSV(parseCSV(await readCSVFile(file)))}catch(err){clearMasterCSV(); $("masterInfo").textContent="マスタCSVの読み込みに失敗しました。UTF-8形式か確認してください。"}});
+$("csvColumnSelect").addEventListener("change",()=>{state.csvSelectedColumn=$("csvColumnSelect").value});
+$("masterPrefixSelect").addEventListener("change",()=>{state.masterPrefixCol=$("masterPrefixSelect").value});
+$("masterNameSelect").addEventListener("change",()=>{state.masterNameCol=$("masterNameSelect").value});
+$("masterCountrySelect").addEventListener("change",()=>{state.masterCountryCol=$("masterCountrySelect").value});
+$("runCsvBtn").addEventListener("click",runCSV); $("downloadCsvBtn").addEventListener("click",downloadCSV); $("clearCsvBtn").addEventListener("click",()=>{clearAllCSV(); $("csvInfo").textContent="CSV状態をクリアしました。"; $("masterInfo").textContent="事業者コードマスタもクリアしました。"});
+renderHistory();
+})();
+</script>
+</body>
+</html>
